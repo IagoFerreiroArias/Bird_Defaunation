@@ -1,7 +1,8 @@
-#Script: Model's cross-validations
-#Author: Iago Ferreiro Arias
-#Date: 16th March, 2023
+# Script: Bayesian modelling: Bird's ratio responses to hunting
+# Author: Iago Ferreiro Arias
+# Date: 3th October 2022
 
+###############################################################################
 library(brms)
 library(ape)
 library(spdep)
@@ -12,11 +13,7 @@ library(corrplot)
 library(dplyr)
 library(lme4)
 library(performance)
-library(loo)
-
-# import hurdle model
-
-load("Results/hurdle_model.RData")
+################################################################################
 
 RR_data <- read.csv("Data/Bird_RR_data.csv")
 
@@ -37,6 +34,15 @@ df_rescale[which(df_rescale$Predictor=="BodyMass") ,"Mean"]<- attr(RR_data$BodyM
 df_rescale[which(df_rescale$Predictor=="BodyMass") ,"SD"]<- attr(RR_data$BodyMass_log, "scaled:scale") #sd
 
 RR_data$BodyMass_log <- as.numeric(RR_data$BodyMass_log)
+
+
+# Hand Wing Index
+RR_data$HWI_log <- log10(RR_data$HWI)
+RR_data$HWI_log <- scale(RR_data$HWI_log, center = T, scale = T)
+df_rescale[which(df_rescale$Predictor=="HWI") ,"Mean"]<- attr(RR_data$HWI_log, "scaled:center") #mean
+df_rescale[which(df_rescale$Predictor=="HWI") ,"SD"]<- attr(RR_data$HWI_log, "scaled:scale") #sd
+
+RR_data$HWI_log <- as.numeric(RR_data$HWI_log)
 
 
 # Distance to hunter's access point
@@ -90,7 +96,7 @@ RR_data$Traded<-as.factor(RR_data$Traded)
 RR_data$Traded<-relevel(RR_data$Traded, ref ="No")
 
 RR_data$Trophic_Level<-as.factor(RR_data$Trophic_Level)
-RR_data$Trophic_Level<-relevel(RR_data$Trophic_Level, ref ="Herbivore")
+RR_data$Trophic_Level<-relevel(RR_data$Trophic_Level, ref ="Omnivore")
 
 RR_data$BirdTree_Species <- as.factor(RR_data$BirdTree_Species)
 RR_data$Dataset <- as.factor(RR_data$Dataset)
@@ -99,13 +105,12 @@ RR_data$CountryNum <- as.factor(RR_data$CountryNum)
 #### check multicollinearity ####
 dcor <- RR_data %>% 
   dplyr::select(DistHunt_log, BodyMass_log, FoodBiomass_log, Stunting_log,
-                PopDens_log, TravDist_log) %>% as.matrix()
+                PopDens_log, TravDist_log, HWI_log) %>% as.matrix()
 
 corrplot::corrplot(cor(dcor), type = 'lower',addCoef.col = "black", tl.col ="#434343" ) # some high values... check vif
 
 RR_data$log_RR <- log10(RR_data$RR +0.000001) # avoid log10(0) = -INF. Not necessary for hurdle
-
-m <- lmer(log_RR ~ DistHunt_log + BodyMass_log + TravDist_log +
+m <- lmer(log_RR ~ DistHunt_log + BodyMass_log + HWI_log + TravDist_log +
             PopDens_log + FoodBiomass_log + Stunting_log +(1|BirdTree_Species), data=RR_data)
 performance::check_collinearity(m) # VIF< 2 for all predictors
 
@@ -114,16 +119,17 @@ rm(list=c("dcor", "m"))
 ##### Modelling hunting impacts (lognormal hurdle) ####
 
 hurdle_formula <- bf(RR ~ DistHunt_log*BodyMass_log + I(DistHunt_log^2)*I(BodyMass_log^2) +
-                       TravDist_log + I(TravDist_log^2)+  Traded + Stunting_log + I(Stunting_log^2) + 
-                       PopDens_log + Reserve + FoodBiomass_log + 
+                        HWI_log + I(HWI_log^2) + TravDist_log + I(TravDist_log^2)+ 
+                        Traded + Stunting_log + I(Stunting_log^2) + PopDens_log + 
+                         I(PopDens^2) + Reserve + Trophic_Level + FoodBiomass_log + 
                        (1|gr(BirdTree_Species, cov = phylo_cov)) + (1|Dataset) + (1|CountryNum),
-                     hu ~ DistHunt_log*BodyMass_log + I(DistHunt_log^2)*I(BodyMass_log^2) + 
-                       TravDist_log + I(TravDist_log^2) + 
+                      hu ~ DistHunt_log*BodyMass_log + I(DistHunt_log^2)*I(BodyMass_log^2) + 
+                       HWI_log + I(HWI_log^2) + TravDist_log + I(TravDist_log^2) + 
                        Traded + Stunting_log + I(Stunting_log^2) + PopDens_log + 
-                       FoodBiomass_log + Reserve + Trophic_Level + 
-                       (1|Dataset) + (1|CountryNum) + (1|gr(BirdTree_Species, cov = phylo_cov)))
+                       I(PopDens_log^2) + FoodBiomass_log + Reserve + Trophic_Level + 
+                      (1|Dataset) + (1|CountryNum) + (1|gr(BirdTree_Species, cov = phylo_cov)))
 
-pr <-c(prior(normal(0, 1), class='Intercept'), prior(normal(0, 1), class='b'))#weakly informative priors
+pr <-c(prior(normal(0, 2.5), class='Intercept'), prior(normal(0, 1), class='b'))#weakly informative priors
 
 # Import and prepare consensus tree from Jetz et al 2012. 
 
@@ -142,37 +148,20 @@ phylo_tree <- drop.tip(consensus_tree, drops)
 phylo_cov <- ape::vcv.phylo(phylo_tree, corr=FALSE) #correlation matrix. If corr= TRUE => vcv matrix
 rm(list=c("drops", "phylo_tree", "consensus_tree"))
 
-##### Cross-validation: phylogenetic blocking #####
+tic()
+hurdle_model <- brm(hurdle_formula, 
+                    data = RR_data,  
+                    chains=4, cores=8, iter = 4000,warmup = 2000, thin = 2, 
+                    family=hurdle_lognormal(), prior=pr,  
+                    data2 = list(phylo_cov = phylo_cov), seed =123,
+                    control = list(adapt_delta =0.95, max_treedepth=15))
 
-# Order level
-rmse<-rep(NA, 10)
-RR_data$foldsOrder <- kfold_split_grouped(K=5, x=RR_data$Order)
-RR_data$foldsOrder
+toc() #11817.4 sec elapsed
 
-formula(hurdle_model)
-for (i in unique(RR_data$foldsOrder)){
-  
-  testing<-RR_data[RR_data$foldsOrder %in% i,]
-  training<-RR_data[!RR_data$foldsOrder %in% i,]
-  Traded<-all(unique(testing$Traded) %in% unique(training$Traded)) #always true?
-  Trophic_Level<-all(unique(testing$Trophic_Level) %in% unique(training$Trophic_Level)) #always true?
-  Reserve<-all(unique(testing$Reserve) %in% unique(training$Reserve)) #always true?
-  if(!all(Traded, Trophic_Level, Reserve)) {next}
-  
-  mod <- brm(hurdle_formula, 
-             data = training,  
-             chains=4, cores=4, 
-             iter = 4000,warmup = 2000, 
-             thin = 2, prior=pr,
-             family=hurdle_lognormal(),   
-             data2 = list(phylo_cov = phylo_cov), seed=123,
-             control = list(adapt_delta =0.95, max_treedepth=15))
-  
-  pred<-predict(mod, newdata=testing, summary=TRUE, re_formula=NA)
-  rmseOrder[i]<-sqrt(mean((pred[,1] - testing$RR)^2))
-  
-}
+save(hurdle_model, file="Results/hurdle_model.RData")
 
-#save results
-write.csv(rmseOrder, "Results/CrossValidation_RMSE_Order.csv", row.names=FALSE)
+
+
+
+
 

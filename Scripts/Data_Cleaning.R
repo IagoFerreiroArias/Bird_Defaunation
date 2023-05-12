@@ -139,6 +139,7 @@ spatial <- SpatialPointsDataFrame(cbind(RR_data$Longitude, RR_data$Latitude),
 mapview(spatial, zcol="Reviewer", layer.name="Reviewer")
 rm(spatial)
 
+
 rm(list=c("hunting_birds", "crosswalk", "bird_traits"))
 
 write.csv(RR_data, "Data/Bird_RR_data.csv", row.names=F)
