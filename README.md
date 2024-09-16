@@ -17,3 +17,5 @@ Body mass and its interactions with hunter accessibility and proximity to urban 
 
 ## Main Conclusions
 Our study emphasizes the role of hunter accessibility and the proximity to urban markets as major drivers of bird abundance declines due to hunting and trapping. We further identified hotspots where overexploitation has detrimental effects on tropical birds, encompassing local extinction events, thus underscoring the urgent need for conservation efforts to address unsustainable exploitation for both subsistence and trade.
+
+![Figure_2](https://github.com/user-attachments/assets/c133933e-0699-45fb-83c5-e4e2cf266561)
