@@ -1,6 +1,6 @@
 # Drivers and spatial patterns of avian defaunation in tropical forests
 
-## Aim
+## Aim
 
 Wildlife overexploitation, either for food consumption or for the pet trade, is one of the main threats to bird species in tropical forests. Yet, the spatial distribution and intensity of harvesting pressure on tropical birds remain challenging to quantify. Here, we identify the drivers of hunting-induced declines in bird abundance and quantify the magnitude and the spatial extent of avian defaunation at a pantropical scale.
 
